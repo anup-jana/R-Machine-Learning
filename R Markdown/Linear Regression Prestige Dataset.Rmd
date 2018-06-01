@@ -1,0 +1,149 @@
+---
+title: "Linear Regression - Prestige Dataset"
+author: "Anup Kumar Jana"
+date: "May 27, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+## Linear Regression - Basic & Multiple using Prestige Dataset
+The dataset used is called Prestige and comes from the car package library(car). Each row is an observation that relates to an occupation. The columns relate to predictors such as average years of education, percentage of women in the occupation, prestige of the occupation, etc.
+
+```{r }
+# Load the package that contains the full dataset and necessary libraries for our work.
+options(warn = -1) # Suppress Warnings
+library(carData) # Loading Prestige dataset
+library(ggplot2) # for some amazing looking graphs
+library(MASS) # Library for our box-cox transform down the end
+library(corrplot) # Plotting nice correlation matrix
+library(cowplot) # arranging plots into a grid
+```
+
+## Examine the Prestige Dataset
+Let's look into the dataset and understand the characteristics of variables
+```{r }
+# Inspect and summarize the data.
+head(Prestige) # First 6 rows of dataset
+str(Prestige) # Structure of Prestige dataset
+summary(Prestige) # Summarize the data of Prestige dataset
+```
+
+You can notice that the 'type' variable has 4 missing values. So, let's keep that in mind and handle them when we are building regression model if type variable will be used
+
+## Correlation Matrix on Prestige Dataset
+Let's identify the variables that are highly correlated with prestige varialble
+```{r }
+cor(Prestige[,-6]) # Correlation of Prestige Dataset on numeric variables
+corrplot(cor(Prestige[,-6]) , method = "number") # Plotting Correlation Matrix
+```
+
+You can notice that income and education varialbes are highly positively correlated with prestige. Also, census is negatively correlated with prestige while women has no correlation.
+
+## Visualizing Prestige Dataset
+Let's see the datapoints on the graph using boxplot, histogram and correlation between variables. First of all let's see the relationship of prestige against income, education & women variables through scatter plot
+```{r }
+plot_income <- ggplot(data = Prestige, aes(x = prestige, y = income, col = type)) + geom_point()
+plot_education <- ggplot(data = Prestige, aes(x = prestige, y = education, col = type)) + geom_point()
+plot_women <- ggplot(data = Prestige, aes(x = prestige, y = women, col = type)) + geom_point()
+plot_census <- ggplot(data = Prestige, aes(x = prestige, y = census, col = type)) + geom_point()
+plot_grid(plot_income, plot_education, plot_women, plot_census, labels = "AUTO")
+```
+
+We can see a strong linear relationship of prestige with income and education rather than women and census. Let's take a look into the data distribution of income & education variables through historgram plot and compare against mean and median values
+```{r }
+hist_income <- ggplot(Prestige, aes(x = income)) + geom_histogram(binwidth = 1000) +
+  geom_vline(xintercept = mean(Prestige$income), color = "indianred") +
+  geom_vline(xintercept = median(Prestige$income), color = "cornflowerblue")
+hist_education <- ggplot(Prestige, aes(x = education)) + geom_histogram(binwidth = 1) +
+  geom_vline(xintercept = mean(Prestige$education), color = "indianred") +
+  geom_vline(xintercept = median(Prestige$education), color = "cornflowerblue")
+plot_grid(hist_income, hist_education, labels = "AUTO")
+```
+
+We can see that income variable is right skewed distribution and education is also not representing normal distribution. Let's try to transform this into normal distribution if possible. We will be using Log2 for income variable and scale the value of the variable education on its mean.
+```{r }
+# Comparing original income histogram against log of income histogram
+hist_income <- ggplot(Prestige, aes(x = income)) + geom_histogram(binwidth = 1000) +
+  labs(title = "Original Income") + labs(x ="Income") +
+  geom_vline(xintercept = mean(Prestige$income), color = "indianred") +
+  geom_vline(xintercept = median(Prestige$income), color = "cornflowerblue")
+hist_trnsf_income <- ggplot(Prestige, aes(x = log(income))) + geom_histogram(binwidth = 0.5) +
+  labs(title = "Transformed Income") + labs(x ="Log of Income") +
+  geom_vline(xintercept = mean(log(Prestige$income)), color = "indianred") +
+  geom_vline(xintercept = median(log(Prestige$income)), color = "cornflowerblue")
+plot_grid(hist_income, hist_trnsf_income, labels = "AUTO")
+```
+
+## Build Linear Regression Model to Predict Prestige
+Now, let's build linear regression model step by step and eliminate the variables that are not significant to our model in the process to improve the performance of regression model. This will also correspond to our findings above of women and census variable not having realtionship with prestige
+
+```{r }
+# Fit a linear model with education, income, women & census variables
+lm_mod1 = lm(prestige ~ education + log(income) + women + census, data = Prestige)
+summary(lm_mod1) # run a summary of its results
+```
+
+You can notice that Adjusted R2 is 82% which is good, however, p-value is high for women and census variables. p-Value: we can consider a linear model to be statistically significant only when p-Values are less than the pre-determined statistical significance level of 0.05. However, income and education has very significant p-value impacting the model. We have seen this correlation above also in scatterplot and correlation plot. Let's remove the women and census variables, build regression model and check it's summary.
+```{r }
+# Fit a linear model with education and income variables
+lm_mod2 = lm(prestige ~ education + log(income), data = Prestige)
+summary(lm_mod2) # run a summary of its results
+```
+
+Adjusted R2 is still 82%, but, the "intercept" is negative i.e. -95. To handle this negative intercept, we will add a new variable education.c that will center the value of the variable education on its mean. This transformation was applied on the education variable so we could have a meaningful interpretation of its intercept estimate.
+```{r }
+prstg_df = Prestige # creating a new dataset copy of Prestige or other manipulations
+
+# scaling the value of education to its mean value
+set.seed(1)
+education.c = scale(prstg_df$education, center=TRUE, scale=FALSE)
+prstg_df = cbind(prstg_df, education.c)
+
+# Fit a linear model with centered education and income variables
+lm_mod3 = lm(prestige ~ education.c + log(income), data = prstg_df)
+summary(lm_mod3) # run a summary of its results
+
+par(mfrow = c(2, 2))  # Split the plotting panel into a 2 x 2 grid
+plot(lm_mod3)  # Plot the income model information
+par(mfrow = c(1, 1))  # Return plotting panel to original 1 section
+```
+
+Let's see the residual values and plot of the last regression model built. Residuals are basically the difference between actual and predicted values. From above summary of model, residuals are ranging from -17 to 18 and you can see in the below plot that they are evenly distributed
+```{r }
+# Compare Actual, Predicted and Residual values of prestige from Education model
+prstg_df_pred = as.data.frame(prstg_df$prestige) # Save the actual values
+prstg_df_pred$predicted <- predict(lm_mod3) # Save the predicted values
+prstg_df_pred$residuals <- residuals(lm_mod3) # Save the residual values
+head(prstg_df_pred)
+
+plot(residuals(lm_mod3)) # Residual distribution of the model
+abline(a=0,b=0,col='blue')
+```
+
+Now, let's see if we can improve the model. If you remember, above we had done scatterplot for income and education against prestige with "type" variable as category and you have seen that for each category the linearity is different. Let's look into that wiht a different perspective. But, before that let's handle the NA values in "type" variable.
+```{r }
+prstg_df <- na.omit(prstg_df) # remove rows containing na's values via omit function
+
+ggplot_income <- ggplot(data = prstg_df, aes(x = prestige, y = income, col = type)) + geom_smooth()
+ggplot_educ <- ggplot(data = prstg_df, aes(x = prestige, y = education, col = type)) + geom_smooth()
+plot_grid(ggplot_income, ggplot_educ, labels = "AUTO")
+```
+
+So, let's add "type" variable to the linear regression model and examine whether the model has improved and makes sense.
+```{r }
+# Fit a linear model with centered education, log of income and type variables
+lm_mod4 = lm(prestige ~ education.c + log(income) + type, data = prstg_df)
+summary(lm_mod4) # run a summary of its results
+```
+
+You can notice that R2 has increased to almost 85% and residuals are ranging from -13.5 to 18.5
+Let's try another way of adding "type" variable to regression model.
+```{r }
+# Fit a linear model with centered education, log of income and type variables
+lm_mod5 = lm(prestige ~ type * (education.c + log(income)), data = prstg_df)
+summary(lm_mod5) # run a summary of its results
+```
+Now, R2 is almost 86%. We can conclude that including type predictor increases the model's accuracy. Keep trying more permutations and combinations and suprise me with your results in the comments section. Happy Machine Learning!

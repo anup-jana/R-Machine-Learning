@@ -1,0 +1,129 @@
+---
+title: "Polynomial Regression Pressure Dataset"
+author: "Anup Kumar Jana"
+date: "May 27, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+## Polynomial or Curvilinear Regression using Pressure Dataset
+The dataset used is called Pressure and comes as a default dataset in R.
+Each row is an observation that provides relation of pressure against temperature.
+
+```{r }
+# Load necessary librariries for our work
+options(warn=-1) # Suppress Warnings
+library(ggplot2) # for some amazing looking graphs
+```
+
+Let's look into the dataset and understand the characteristics of variables
+```{r }
+# Inspect and summarize the data.
+head(pressure) # First 6 rows of dataset
+str(pressure) # Structure of Pressure dataset
+summary(pressure) # Summarize the data of Prestige dataset
+```
+
+## Visualizing Pressure Dataset
+Let's see the datapoints on the graph and whether we can make any correlation between temperature and pressure variables
+
+```{r, echo=TRUE}
+plot(pressure)
+```
+
+We can observe that the relation is not linear but curvilinear i.e. linear with a curve
+But, let's apply linear model anyway and understand the model performance and prediction
+```{r }
+# Build Basic Linear Regression Model where we are predicting pressure through temperature
+lm_mod=lm(pressure ~ temperature, data=pressure)
+summary(lm_mod)
+```
+
+You can observe below that R2 is 57% which is not very good and Intercept is -147 which means for some values of temperature the model will predict negative pressure values which shouldn't be the case.
+
+Let's Plot the regression line from the model build on dataset and you can see below that not all the datapoints are fitting the regression line, low & high datapoints are way off.
+```{r }
+ggplot(data = pressure, aes(x = temperature, y = pressure)) + 
+  geom_point(color='blue') +
+  geom_smooth(method = "lm")
+```
+
+Now, let's make a prediction of pressure value when temperature is 250 and plot the predicted and actual values together to get a sense
+```{r }
+pred_pressure <- predict(lm_mod, data.frame(temperature=250)) # Predict pressure for 250 temperature
+pred_pressure # Predicted pressure value
+
+# create dataframe for predicted data points to be binded with original dataset
+new_pressure_row <- data.frame(
+  temperature = 250, pressure = pred_pressure, stringsAsFactors = FALSE)
+
+plot_pressure <- rbind(pressure, new_pressure_row) # bind predicted value with original dataset
+
+# Plotting predicted and actual datapoints together
+ggplot() +
+  geom_point(aes(x = plot_pressure$temperature, y = plot_pressure$pressure), color = 'red') + 
+  geom_point(aes(x = 250, y = pred_pressure), color= "green", size=3) +
+  geom_line(aes(x = pressure$temperature, y = predict(lm_mod, newdata = pressure)), color = 'blue') +
+  xlab('Temperature') +   ylab('Pressure')
+```
+
+As you can notice, for temperature value 250, pressure is predicted as 230 which is more than the actual values corresponding to adjacent temperature values
+So, we can infer that the model is nonlinear regression and the same can be said for polynomial as it appear. In fact, polynomial fits are just linear fits involving a curve with predictors in the form of x^1, x^2, ., x^n
+
+Let's transform the dataset for polynomial regression, you will need to identify the level until which you need to transform temperature variable (in the form of x^n) so that our regression line fits the dataset points. Once, you identify that any more addition of transformation variable is not chaning the regression fit line then you need to stop and build the polynomial regression model.
+From my perspective, 4 levels are enough because on 5th level R2 is 100% which is kind of overfitting, so we will stop at 4th level
+```{r }
+poly_pressure1 = pressure # creating copy of original dataset
+
+# Adding transformed variables in form of x^n
+poly_pressure1$temperature2=poly_pressure1$temperature^2
+poly_pressure1$temperature3=poly_pressure1$temperature^3
+poly_pressure1$temperature4=poly_pressure1$temperature^4
+
+# Fitting Polynomial Regression to the new transformed dataset
+poly_reg1=lm(pressure ~ ., data=poly_pressure1)
+
+# Visualising the Polynomial Regression results of the transformed dataset
+ggplot() +
+  geom_point(aes(x = poly_pressure1$temperature, y = poly_pressure1$pressure), color = 'red') +
+  geom_line(aes(x=poly_pressure1$temperature,y=predict(poly_reg1,newdata=poly_pressure1)),color='blue') +
+  ggtitle('Polynomial Regression Model') +
+  xlab('Temperature') + ylab('Pressure')
+
+summary(poly_reg1) # check the summary of polynomial model
+```
+
+You can see from the summary of model that all transformed temperature variables are significant and R2 of the model is 99.96%. Now, let's make a prediction of pressure value with temperature as 250 with the new polynomial model and plot the predicted and actual values together
+```{r }
+# Prepare transformed data for predicting temperature as 250
+predict_lvl1 = data.frame(temperature  = 250,
+                          temperature2 = 250^2,
+                          temperature3 = 250^3,
+                          temperature4 = 250^4)
+
+pred_pressure1 <- predict(poly_reg1, predict_lvl1) # Predict pressure for 250 temperature
+pred_pressure1 # Predicted pressure value
+
+# create dataframe for predicted data points to be binded with original dataset
+new_pressure_row <- data.frame(
+  temperature = 250,
+  temperature2 = 250^2,
+  temperature3 = 250^3,
+  temperature4 = 250^4,
+  pressure = pred_pressure1, stringsAsFactors = FALSE)
+
+plot_pressure1 <- rbind(poly_pressure1, new_pressure_row) # bind predicted value with original dataset
+
+# Plotting predicted and actual datapoints together for polynomial model
+ggplot() +
+  geom_point(aes(x = plot_pressure1$temperature, y = plot_pressure1$pressure), color = 'red') + 
+  geom_point(aes(x = 250, y = pred_pressure1), color= "green", size=3) +
+  geom_line(aes(x=poly_pressure1$temperature,y=predict(poly_reg1,newdata=poly_pressure1)),color='blue') +
+  ggtitle('Polynomial Regression Model Prediction') +
+  xlab('Temperature') +   ylab('Pressure')
+```
+
+So, the predicted value is now on the regression fit line and prediction seems to be perfect. We would need to train the model based on the new data which will change the curve of linear regression, however, we know now how to fit the model for polynomial regression and predict through polynomial model.
