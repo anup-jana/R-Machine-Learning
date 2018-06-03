@@ -1,0 +1,312 @@
+---
+title: "Logistic Model with Credit Risk Dataset"
+author: "Anup Kumar Jana"
+date: "June 1, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+## Logistic Regression Model - Credit Risk Dataset
+We will be learning Logistic Regression using Credit Risk dataset. Goal is to properly classify people who have defaulted based on dataset parameters. We shall be using Confusion Matrix for checking performance of logistic regresion model.
+You can find the dataset "Credit_Risk_Train_data.csv" & "Credit_Risk_Validate_data.csv" in the following location -> https://github.com/anup-jana/R-Machine-Learning/tree/master/R%20Scripts/Datasets
+So, Let's Begin!
+
+```{r }
+# Load necessary librariries for our work
+options(warn=-1) # Suppress Warnings
+library(ggplot2) # for some amazing looking graphs
+library(MASS) # Library for our box-cox transform down the end
+library(corrplot) # Plotting nice correlation matrix
+library(cowplot) # arranging plots into a grid
+library(dplyr) # Lirary for spliting train & test dataset
+```
+
+Let's Load the dataset and look into characteristics of the data and variables
+```{r }
+# Load the csv file and convert null string values to NA values for capturing NA values automatically
+cr_org=read.csv("Credit_Risk_Train_data.csv", na.strings=c("","","NA"))
+
+str(cr_org) # Check data structure
+
+summary(cr_org) # Summary of Dataset
+```
+
+Let's check some statistics like unique, mising and empty values in the dataset
+```{r }
+cr_org=cr_org[-1] #Removing Loan_ID as it has no logical corelation
+
+# Let's check for any missing values in the data
+colSums(is.na(cr_org))
+
+# Checking for empty values
+colSums(cr_org=='')
+```
+
+## Visualizing Credit Risk Dataset
+We can observe that there are few NA values in few feature variables.
+Visualize the data distribution of various data variables through Histogram.
+```{r }
+hist_loan_amt <- ggplot(cr_org, aes(x = LoanAmount)) + geom_histogram(binwidth = 10) +
+  geom_vline(xintercept = mean(cr_org$LoanAmount), color = "indianred") +
+  geom_vline(xintercept = median(cr_org$LoanAmount), color = "cornflowerblue")
+hist_app_income <- ggplot(cr_org, aes(x = ApplicantIncome)) + geom_histogram(binwidth = 1000) +
+  geom_vline(xintercept = mean(cr_org$ApplicantIncome), color = "indianred") +
+  geom_vline(xintercept = median(cr_org$ApplicantIncome), color = "cornflowerblue")
+hist_COapp_income <- ggplot(cr_org, aes(x = CoapplicantIncome)) + geom_histogram(binwidth = 1000) +
+  geom_vline(xintercept = mean(cr_org$CoapplicantIncome), color = "indianred") +
+  geom_vline(xintercept = median(cr_org$CoapplicantIncome), color = "cornflowerblue")
+plot_grid(hist_loan_amt, hist_app_income, hist_COapp_income, labels = "AUTO")
+
+# Scatterplot of Loan Status variable against LoanAmount
+ggplot(data = cr_org, aes(x = LoanAmount, y = Loan_Status, col = Property_Area)) + geom_point()
+```
+
+## Handling Null, Outlier and Categorical Variables
+Let's create a function to treat NA values in categorical attributes. We will treat NA values of numerical attributes with the mean of numerical variable.
+```{r }
+# Get Mode value of character variables - This will be used to replace NA values
+Mode = function(x){
+  ta = table(x)
+  tam = max(ta)
+  if(all(ta == tam))
+    mod = NA
+  else if(is.numeric(x))
+    mod = as.numeric(names(ta))[ta==tam]
+    else
+      mod = names(ta)[ta==tam]
+  return(mod)
+}
+
+cr_wrk = cr_org # creating a new dataset copy of original credit risk before other manipulations
+
+# For character variables use mode value of the attribute
+cr_wrk$Gender[is.na(cr_wrk$Gender)] = Mode(cr_wrk$Gender)
+cr_wrk$Married[is.na(cr_wrk$Married)] = Mode(cr_wrk$Married)
+cr_wrk$Dependents[is.na(cr_wrk$Dependents)] = Mode(cr_wrk$Dependents)
+cr_wrk$Credit_History[is.na(cr_wrk$Credit_History)] = Mode(cr_wrk$Credit_History)
+
+#  For numeric variables use mean value of the attribute
+cr_wrk$LoanAmount[is.na(cr_wrk$LoanAmount)] <- mean(cr_wrk$LoanAmount, na.rm = T)
+cr_wrk$Loan_Amount_Term[is.na(cr_wrk$Loan_Amount_Term)] <- mean(cr_wrk$Loan_Amount_Term, na.rm = T)
+
+summary(cr_wrk) # Check summary of dataset after replacing NA values
+```
+
+Let's handle outliers for LoanAmount, ApplicantIncome & CoapplicantIncome
+```{r }
+# Replace outlier with lower and upper cutoff value
+out_std = function(x){
+  m = mean(x)
+  s = sd(x)
+  lc = m-3*s
+  uc= m+3*s
+  n = sum(x>uc |  x<lc )
+  val = list(num=n,lower_cutoff=lc,upper_cutoff=uc)
+  return(val)
+}
+
+# Treatment of outlier for CoapplicantIncome
+lc=out_std(cr_wrk$CoapplicantIncome)$lower_cutoff
+uc=out_std(cr_wrk$CoapplicantIncome)$upper_cutoff
+cr_wrk$CoapplicantIncome[cr_wrk$CoapplicantIncome>uc]=uc
+cr_wrk$CoapplicantIncome[cr_wrk$CoapplicantIncome<lc]=lc
+
+# Treatment of outlier for LoanAmount
+cr_wrk$LoanAmount=as.numeric(cr_wrk$LoanAmount)
+lc=out_std(cr_wrk$LoanAmount)$lower_cutoff
+uc=out_std(cr_wrk$LoanAmount)$upper_cutoff
+cr_wrk$LoanAmount[cr_wrk$LoanAmount>uc]=uc
+cr_wrk$LoanAmount[cr_wrk$LoanAmount<lc]=lc
+
+# Treatment of outlier for ApplicantIncome
+lc=out_std(cr_wrk$ApplicantIncome)$lower_cutoff
+uc=out_std(cr_wrk$ApplicantIncome)$upper_cutoff
+cr_wrk$ApplicantIncome[cr_wrk$ApplicantIncome>uc]=uc
+cr_wrk$ApplicantIncome[cr_wrk$ApplicantIncome<lc]=lc
+
+summary(cr_wrk) # Check summary of dataset after outliers treatment
+```
+
+Now, let's handle categorical attributes as regression model can only handle numeric attributes. So, let's create dummy variables for categorical attributes which will be used for regression model. If there are only 2 unique values in attribute then create a dummy variable with 1/0. If there are more than 2 unique values in attribute then create a dummy variable for each value with 1/0.
+```{r }
+table(cr_wrk$Property_Area) # use this command to check number of unqiue values 
+
+# 2 Unique values treatment
+cr_wrk$Dummy_Gender=ifelse(cr_wrk$Gender=="Male",1,0)
+cr_wrk$Dummy_Married=ifelse(cr_wrk$Married=="Yes",1,0)
+cr_wrk$Dummy_Education=ifelse(cr_wrk$Education=="Graduate",1,0)
+cr_wrk$Dummy_Self_employed=ifelse(cr_wrk$Self_Employed=="Yes",1,0)
+
+# More than 2 unique values treatment
+cr_wrk$Dummy_Urban=ifelse(cr_wrk$Property_Area=="Urban",1,0)
+cr_wrk$Dummy_Rural=ifelse(cr_wrk$Property_Area=="Rural",1,0)
+cr_wrk$Dummy_Semiurban=ifelse(cr_wrk$Property_Area=="Semiurban",1,0)
+
+cr_wrk$Dummy_Dep=as.numeric(substr(cr_wrk$Dependents,1,1)) # Take first character each of them
+
+cr_wrk$Loan_Status=ifelse(cr_wrk$Loan_Status=="Y",1,0)  # target response variable
+# Check the transformed dataset before we go into logistic regression model
+```
+
+## Correlation Matrix on transformed Credit Risk Dataset
+Beore we go into building logistic regression model, let's identify the variables that are highly correlated
+```{r }
+# Get numeric variables for correlation function
+numeric <- cr_wrk[sapply(cr_wrk, is.numeric)]
+descrCor <- cor(numeric)
+corrplot(descrCor)
+```
+
+## Building Logistic Regression Model
+Before we train the model, let's create a dataset by taking only dummy variables and amount variables for our regression model. We need to remove Loan Status variable as we are going to predict Loan Status and then compare it with the original values for checking performance of model.
+```{r }
+# Take dummy and amount variables for regression model
+cr_df_train=select(cr_wrk,-Gender,-Married,-Education,-Self_Employed,-Dependents,-Property_Area) 
+
+# Remove Loan Status as we are going to predict value of this attribute 
+train_data = select(cr_df_train,-Loan_Status)
+
+# Let's train the model and check the summary of the model
+model1=glm(Loan_Status~., data=cr_df_train, family=binomial("logit"))
+summary(model1)
+```
+
+## Accuracy Test through Confusion Matrix, AIC, Null Deviance & ROC Curve
+1. AIC (Akaike Information Criteria) - The analogous metric of adjusted R² in logistic regression is AIC. AIC is the measure of fit which penalizes model for the number of model coefficients. Golden Rule - Lower the value, better the model.
+
+2. Null Deviance and Residual Deviance - Null Deviance indicates the response predicted by a model with nothing but an intercept. Lower the value, better the model. Residual deviance indicates the response predicted by a model on adding independent variables. Golden Rule - Lower the value, better the model.
+
+3. Confusion Matrix - It is nothing but a tabular representation of Actual vs Predicted values. This helps us to find the accuracy of the model and avoid overfitting. Golden Rule - Higher the value, better the model.This is how it looks like:
+image: ![](C:/Users/ajana/Downloads/download.png)
+Now, let's consider the confusion matrix in more detail now. The names true positive (TP), true negative (TN), false positive (FP), and false negative (FN) are often used to reference the four cells of the confustion matrix.
+
+Sensitivity = True Positive Rate = TP / (TP + FN)
+Specificity = True Negative Rate = TN / (TN + FP)
+Prevelance / Accuracy = (TP + FN) / Total Obs
+
+4. ROC Curve: Receiver Operating Characteristic(ROC) summarizes the model's performance by evaluating the trade offs between true positive rate (sensitivity) and false positive rate(1- specificity). For plotting ROC, it is advisable to assume p > 0.5 since we are more concerned about success rate. ROC summarizes the predictive power for all possible values of p > 0.5.  The area under curve (AUC), referred to as index of accuracy(A) or concordance index, is a perfect performance metric for ROC curve. Golden Rule - Higher the area under curve, better the prediction power of the model. 
+
+## Computing Accuracy and ROC Curve of the Model on Train Dataset
+Let's observe how our model has performed based on the model built above through parameters like accuracy, precision, sensitivity, specificity, error. This can be achieved by bulding Confusion Matrix though predicted and actual values.
+```{r }
+# Validation of our model using training dataset
+fitted.results1 = predict(model1, newdata=train_data, type='response')
+
+# If results are more than 50% then convert to 1 else 0
+fitted.results1 = ifelse(fitted.results1 >=0.5,1,0)
+
+# Evaluate predictions on the training dataset through Confusion Matrix
+cf1 = table(predicted = fitted.results1, actual = cr_df_train$Loan_Status)
+cf1 # Check Confuxion Matrix
+
+TN = cf1[1,1] # True Negative - Actual & Predicted is 0/N
+TP = cf1[2,2] # True Positive - Actual & Predicted is 1/Y
+FP = cf1[2,1] # False Positive - Actual is 0/N but Predicted is 1/Y
+FN = cf1[1,2] # False Nefgative - Actual is 1/Y but Predicted is 0/N
+TO = TN+TP+FP+FN # Total Observations
+
+accuracy = (TP+TN)/TO # Accuracy or Prevalance of Confusion Matrix
+accuracy # 81.27%
+
+precision = TP/(TP+FP) # Precision
+precision # 79.35%
+
+sensitivity = TP/(TP+FN) # True Positive Rate
+sensitivity # 98.24%
+
+specificity = TN/(TN+FP) # True Negative Rate
+specificity # 44.26%
+
+error = (FP+FN)/TO # Error Rate
+error # 18.72%
+```
+
+Inference - We see that the model is doing far better in sensitivity as compared to specificity. We will come back to these concepts later, but before that, let us check the Area Under the Curve (AUC), also known as ROC curve (receiver operating characteristic curve)
+```{r }
+library(pROC) # For checking ROC Curve of the model
+library(ROCR)
+# Option 1 
+roccurve=roc(fitted.results1, cr_df_train$Loan_Status)
+plot(roccurve, print.auc = TRUE) # 85.70%
+auc(roccurve) # 85.70% 
+
+# Option 2
+ROCRpred <- prediction(fitted.results1, cr_df_train$Loan_Status)
+ROCRperf <- performance(ROCRpred, 'tpr','fpr')
+plot(ROCRperf, colorize = TRUE, text.adj = c(-0.2,1.7))
+```
+
+## Predict Loan Status of Test Dataset
+Now, it is time to predict the Loan Status value of test dataset. So, let's load the test dataset and remember, we need to perform the same transformation to test dataset as we did it on train dataset before passing it onto prediction model. Here our functions will come into picture as we can use them again. Although, you can write a function to tranform the dataset which can be used again and again for different datasets when you get any for passing onto regression model.
+```{r }
+# Load the test/validation dataset
+cr_df_test=read.csv("Credit_Risk_Validate_data.csv", na.strings=c("","","NA"))
+
+# Prepare data for logistic regression model same as training dataset like NA treatment, dummy variables, etc.
+cr_df_test=cr_df_test[-1] #Removing Loan_ID as it has no logical corelation
+
+# Null values treatment
+cr_df_test$LoanAmount[is.na(cr_df_test$LoanAmount)] <- mean(cr_df_test$LoanAmount, na.rm = T)
+cr_df_test$Loan_Amount_Term[is.na(cr_df_test$Loan_Amount_Term)] <- mean(cr_df_test$Loan_Amount_Term, na.rm = T)
+cr_df_test$Gender[is.na(cr_df_test$Gender)] = Mode(cr_df_test$Gender)
+cr_df_test$Married[is.na(cr_df_test$Married)] = Mode(cr_df_test$Married)
+cr_df_test$Dependents[is.na(cr_df_test$Dependents)] = Mode(cr_df_test$Dependents)
+cr_df_test$Credit_History[is.na(cr_df_test$Credit_History)] = Mode(cr_df_test$Credit_History)
+
+# Dummy variables creation for categorical attributes
+cr_df_test$Dummy_Gender=ifelse(cr_df_test$Gender=="Male",1,0)
+cr_df_test$Dummy_Married=ifelse(cr_df_test$Married=="Yes",1,0)
+cr_df_test$Dummy_Education=ifelse(cr_df_test$Education=="Graduate",1,0)
+cr_df_test$Dummy_Self_employed=ifelse(cr_df_test$Self_Employed=="Yes",1,0)
+cr_df_test$Dummy_Urban=ifelse(cr_df_test$Property_Area=="Urban",1,0)
+cr_df_test$Dummy_Rural=ifelse(cr_df_test$Property_Area=="Rural",1,0)
+cr_df_test$Dummy_Semiurban=ifelse(cr_df_test$Property_Area=="Semiurban",1,0)
+cr_df_test$Dummy_Dep=as.numeric(substr(cr_df_test$Dependents,1,1)) # take first character
+
+cr_df_test$outcome=ifelse(cr_df_test$outcome=="Y",1,0) # target response variable
+
+# Remove corresponding variables for dummy and outcome
+test_data=select(cr_df_test,-Gender,-Married,-Education,-Self_Employed,-Dependents,-Property_Area,-outcome)
+
+# Validation of our model using validation dataset
+fitted.results2 = predict(model1, newdata=test_data, type='response')
+
+# If results are more than 50% then convert to 1 else 0
+fitted.results2 = ifelse(fitted.results2 >=0.5,1,0)
+```
+
+## Computing Accuracy and ROC Curve of the Model on Test Dataset
+Let's check the model's accuracy on test dataset parameters like accuracy, precision, sensitivity, specificity, error by building Confusion Matrix.
+```{r }
+# Making predictions on the train set through Confusion Matrix
+cf2 = table(predicted = fitted.results2, actual = cr_df_test$outcome)
+cf2 # Check Confuxion Matrix
+
+TN = cf2[1,1] # True Negative - Actual & Predicted is 0/N
+TP = cf2[2,2] # True Positive - Actual & Predicted is 1/Y
+FP = cf2[2,1] # False Positive - Actual is 0/N but Predicted is 1/Y
+FN = cf2[1,2] # False Nefgative - Actual is 1/Y but Predicted is 0/N
+TO = TN+TP+FP+FN # Total Observations
+
+accuracy = (TP+TN)/TO # Accuracy or Prevalance of Confusion Matrix
+accuracy # 95.05%
+
+sensitivity = TP/(TP+FN) # True Positive Rate
+sensitivity # 99.64%
+
+specificity = TN/(TN+FP) # True Negative Rate
+specificity # 75.38%
+
+error = (FP+FN)/TO # Error Rate
+error # 04.94%
+
+# ROC curve (receiver operating characteristic curve)
+roccurve=roc(fitted.results2, cr_df_test$outcome)
+plot(roccurve, print.auc = TRUE) # 96.30%
+auc(roccurve) # 96.28%
+```
+
+That's it for now. There is certainly much more we could cover like combination of predictors which might improve the accuracy of model, how to handle imbalance classification model, how to boost the predictor variables to improve the accuracy, etc. We will cover them in another post until then Happy Learning!
